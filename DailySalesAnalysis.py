@@ -17,6 +17,9 @@ except ImportError:
 # Options for filters
 product_options = sorted(Sales_df["product"].unique())
 region_options = sorted(Sales_df["region"].unique())
+region_radio_options = [{"label": "All regions", "value": "all"}] + [
+    {"label": r.title(), "value": r} for r in region_options
+]
 
 app = Dash(__name__)
 
@@ -32,12 +35,11 @@ app.layout = html.Div(
                     multi=True,
                     placeholder="Select product(s)",
                 ),
-                dcc.Dropdown(
-                    id="region-filter",
-                    options=[{"label": r.title(), "value": r} for r in region_options],
-                    value=region_options,
-                    multi=True,
-                    placeholder="Select region(s)",
+                dcc.RadioItems(
+                    id="region-radio",
+                    options=region_radio_options,
+                    value="all",
+                    inline=True,
                 ),
             ],
             style={"display": "flex", "gap": "12px", "marginBottom": "12px"},
@@ -53,6 +55,7 @@ app.layout = html.Div(
             [
                 dcc.Graph(id="quantity-box", style={"flex": 1}),
                 dcc.Graph(id="price-quantity", style={"flex": 1}),
+                dcc.Graph(id="price-quantity-hist", style={"flex": 1}),
             ],
             style={"display": "flex", "gap": "12px"},
         ),
@@ -66,21 +69,22 @@ app.layout = html.Div(
     Output("region-share", "figure"),
     Output("quantity-box", "figure"),
     Output("price-quantity", "figure"),
+    Output("price-quantity-hist", "figure"),
     Input("product-filter", "value"),
-    Input("region-filter", "value"),
+    Input("region-radio", "value"),
 )
-def update_dashboard(selected_products, selected_regions):
+def update_dashboard(selected_products, selected_region):
     df = Sales_df.copy()
 
     # Keep rows that match current filters
     if selected_products:
         df = df[df["product"].isin(selected_products)]
-    if selected_regions:
-        df = df[df["region"].isin(selected_regions)]
+    if selected_region and selected_region != "all":
+        df = df[df["region"] == selected_region]
 
     if df.empty:
         empty_fig = px.scatter(title="No data for the selected filters")
-        return empty_fig, empty_fig, empty_fig, empty_fig
+        return empty_fig, empty_fig, empty_fig, empty_fig, empty_fig
 
     daily_revenue = (
         df.groupby(["date", "product"], as_index=False)
@@ -146,7 +150,18 @@ def update_dashboard(selected_products, selected_regions):
         labels={"quantity": "Quantity", "price": "Price", "product": "Product"},
     )
 
-    return revenue_trend, region_share, quantity_box, price_quantity
+    price_quantity_hist = px.histogram(
+        df,
+        x="quantity",
+        y="price",
+        histfunc="avg",
+        nbins=25,
+        color="product",
+        title="Average price by quantity bin",
+        labels={"quantity": "Quantity", "price": "Price", "product": "Product"},
+    )
+
+    return revenue_trend, region_share, quantity_box, price_quantity, price_quantity_hist
 
 
 if __name__ == "__main__":
