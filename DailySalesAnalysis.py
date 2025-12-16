@@ -3,10 +3,16 @@ import plotly.express as px
 import pandas as pd
 
 # Load and enrich data
-Sales_df = pd.read_csv("data/Combined_Sales_df.csv").drop(columns=["Unnamed: 0"], errors="ignore")
+Sales_df = pd.read_csv("data/pink_morsel_df.csv").drop(columns=["Unnamed: 0"], errors="ignore")
 Sales_df["date"] = pd.to_datetime(Sales_df["date"])
 Sales_df["revenue"] = Sales_df["price"] * Sales_df["quantity"]
 Sales_df = Sales_df.sort_values("date")
+FOCAL_DATE = pd.to_datetime("2021-01-15")
+try:
+    import statsmodels.api  # noqa: F401
+    TRENDLINE_MODE = "ols"
+except ImportError:
+    TRENDLINE_MODE = None
 
 # Options for filters
 product_options = sorted(Sales_df["product"].unique())
@@ -22,7 +28,7 @@ app.layout = html.Div(
                 dcc.Dropdown(
                     id="product-filter",
                     options=[{"label": p.title(), "value": p} for p in product_options],
-                    value=product_options,
+                    value=["pink morsel"],
                     multi=True,
                     placeholder="Select product(s)",
                 ),
@@ -66,10 +72,15 @@ app.layout = html.Div(
 def update_dashboard(selected_products, selected_regions):
     df = Sales_df.copy()
 
+    # Keep rows that match current filters
     if selected_products:
         df = df[df["product"].isin(selected_products)]
     if selected_regions:
         df = df[df["region"].isin(selected_regions)]
+
+    if df.empty:
+        empty_fig = px.scatter(title="No data for the selected filters")
+        return empty_fig, empty_fig, empty_fig, empty_fig
 
     daily_revenue = (
         df.groupby(["date", "product"], as_index=False)
@@ -83,6 +94,26 @@ def update_dashboard(selected_products, selected_regions):
         markers=True,
         title="Daily revenue by product",
         labels={"revenue": "Revenue", "date": "Date", "product": "Product"},
+    )
+    revenue_trend.add_shape(
+        type="line",
+        x0=FOCAL_DATE,
+        x1=FOCAL_DATE,
+        y0=0,
+        y1=1,
+        xref="x",
+        yref="paper",
+        line=dict(color="red", dash="dot"),
+    )
+    revenue_trend.add_annotation(
+        x=FOCAL_DATE,
+        y=1,
+        yref="paper",
+        text="15 Jan 2021 price rise",
+        showarrow=False,
+        xanchor="left",
+        yanchor="bottom",
+        font=dict(color="red"),
     )
 
     region_revenue = df.groupby("region", as_index=False).agg(revenue=("revenue", "sum"))
@@ -110,7 +141,7 @@ def update_dashboard(selected_products, selected_regions):
         x="quantity",
         y="price",
         color="product",
-        trendline="ols",
+        trendline=TRENDLINE_MODE,
         title="Price vs quantity",
         labels={"quantity": "Quantity", "price": "Price", "product": "Product"},
     )
